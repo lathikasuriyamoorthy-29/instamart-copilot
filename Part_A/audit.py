@@ -11,7 +11,7 @@ tables = {"orders": orders, "customers": customers,
           "products": products, "tickets": tickets}
 
 # Part 1: shape, data types, missing values for every table
-for name, df in tables.items():
+def audit_table(name, df):
     print(f"\n=== {name} ===")
     print("shape:", df.shape)
     print(df.dtypes)
@@ -20,6 +20,11 @@ for name, df in tables.items():
         "missing_pct": (df.isna().mean() * 100).round(2),
     })
     print(missing)
+
+audit_table("orders", orders)
+audit_table("customers", customers)
+audit_table("products", products)
+audit_table("tickets", tickets)
 
 # Part 2: specific orders audit
 print("\n--- orders audit ---")
