@@ -69,3 +69,26 @@ print("missing order_amount:", orders["order_amount"].isna().sum())
 print("missing delivery (completed):", orders.loc[completed, "delivery_minutes"].isna().sum())
 print("missing delivery (cancelled):", orders.loc[~completed, "delivery_minutes"].isna().sum())
 print("sum of completed amounts:", round(orders.loc[completed, "order_amount"].sum(), 2))
+
+# ================= SAVE =================
+import os, sqlite3
+os.makedirs("data/clean", exist_ok=True)
+
+# dates become plain text, because SQLite has no real date type
+orders_out = orders.copy()
+orders_out["order_ts"] = orders_out["order_ts"].dt.strftime("%Y-%m-%d %H:%M:%S")
+customers_out = customers.copy()
+customers_out["signup_date"] = customers_out["signup_date"].dt.strftime("%Y-%m-%d")
+
+# save as CSV files
+customers_out.to_csv("data/clean/customers.csv", index=False)
+products.to_csv("data/clean/products.csv", index=False)
+orders_out.to_csv("data/clean/orders.csv", index=False)
+
+# save into the SQLite database
+conn = sqlite3.connect("data/instamart.db")
+customers_out.to_sql("customers", conn, if_exists="replace", index=False)
+products.to_sql("products", conn, if_exists="replace", index=False)
+orders_out.to_sql("orders", conn, if_exists="replace", index=False)
+conn.close()
+print("saved clean CSVs and data/instamart.db")
