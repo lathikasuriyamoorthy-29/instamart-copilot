@@ -1,7 +1,7 @@
 # Instamart Customer Intelligence & Support Copilot
 
 ## Overview
-(write 2-3 sentences about what the project does)
+This project builds a Customer Intelligence & Support Copilot for synthetic Instamart data, in four connected parts. Part A cleans messy order, customer and product exports and stores them in a SQLite database. Part B segments customers with K-means and predicts which customers will lapse. Part C triages support tickets with an offline mock language model, with privacy guardrails, retries and a token budget. Part D answers policy questions with retrieval and runs a refund agent that uses tools. All data is synthetic, all amounts are in INR, and no paid service or API key is needed.
 
 ## Reproduce
 1. python -m venv .venv
@@ -15,7 +15,6 @@
 
 ## Part A
 ### Raw data audit
-
 Raw table shapes: orders 13,084 x 9, customers 1,200 x 5, products 40 x 4, tickets 164 x 5.
 Missing values: orders has 53 blank order_amount (0.41%) and 2,541 blank delivery_minutes (19.42%); customers has 61 blank age (5.08%) and 30 blank gender (2.50%); products and tickets have none.
 
@@ -35,7 +34,6 @@ Missing values: orders has 53 blank order_amount (0.41%) and 2,541 blank deliver
 | Blank gender | 30 |
 
 ### Cleaning rules
-
 **Customers**
 - City: stripped spaces and applied title case, so 24 spellings became 6 cities.
 - Gender: mapped all spellings to male, female or unknown. Result: female 610, male 560, unknown 30 (the blanks).
@@ -54,7 +52,6 @@ Missing values: orders has 53 blank order_amount (0.41%) and 2,541 blank deliver
 **Storage and validation:** clean tables are saved to data/clean/ as CSV files and to data/instamart.db (tables customers, products, orders). Part_A/validate.py checks the reference values and prints ALL CHECKPOINTS PASSED.
 
 ### SQL results
-
 All queries are in sql/queries.sql and are run with Part_A/run_queries.py. Only completed orders count as revenue.
 
 | Query | Technique | Result |
