@@ -78,7 +78,27 @@ By the 1.5×IQR rule, the upper fence is 645.30 and 897 orders lie above it. The
 The strongest relationship is between order_amount and discount_pct (−0.095), while order_amount and quantity is similar in size (+0.087). Both are very weak, and a correlation this small does not establish cause and effect.
 
 ## Part B
-(coming later)
+## Part B
+
+### Task 1: RFM table
+RFM was built from completed orders only, measured at the snapshot 2025-10-01 00:00:00. Recency is the whole days since a customer's last completed order, frequency is the number of distinct completed orders, and monetary is the sum of completed order_amount. 1,175 customers have at least one completed order (the other 25 have none). Recency has a median of 19 days (range 0 to 180), frequency has a mean of 9.46 (maximum 33), and monetary has a mean of INR 2,552.06 (maximum INR 14,766.55).
+
+### Task 2: K-means selection
+The three RFM columns were standardised with StandardScaler, so that monetary (up to INR 14,766) does not dominate recency (up to 180 days). K-means (n_init=10, random_state=42) was run for K = 2 to 8.
+
+| K | Inertia | Silhouette |
+|---|---|---|
+| 2 | 1820.8 | 0.465 |
+| 3 | 1268.2 | 0.445 |
+| 4 | 743.1 | 0.526 |
+| 5 | 617.4 | 0.481 |
+| 6 | 503.2 | 0.482 |
+| 7 | 408.5 | 0.416 |
+| 8 | 366.5 | 0.412 |
+
+**Chosen K = 4.** Inertia falls sharply up to K=4 (1268.2 to 743.1) and much more slowly after it (743.1 to 617.4), so the elbow is at K=4. Among K = 3, 4 and 5, K=4 also has the highest silhouette score (0.526). Four segments is also a number the business can design campaigns around.
+
+Inertia is the total squared distance from each customer to the centre of their cluster. Adding more clusters always places centres closer to the customers, so inertia keeps falling as K grows, and K=8 will always score lower than K=2 (at the extreme, one cluster per customer gives an inertia of 0). Because of this, inertia alone would always favour a larger K, so K must also be judged with the elbow in the curve, the silhouette score, and whether the segments are useful to the business.
 
 ## Part C
 (coming later)
