@@ -91,7 +91,7 @@ The three RFM columns were standardised with StandardScaler, so that monetary (u
 | 2 | 1820.8 | 0.465 |
 | 3 | 1268.2 | 0.445 |
 | 4 | 743.1 | 0.526 |
-| 5 | 617.4 | 0.481 |
+| 5 | 617.4 | 0.480 |
 | 6 | 503.2 | 0.482 |
 | 7 | 408.5 | 0.416 |
 | 8 | 366.5 | 0.412 |
