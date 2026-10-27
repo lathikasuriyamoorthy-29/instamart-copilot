@@ -100,6 +100,28 @@ The three RFM columns were standardised with StandardScaler, so that monetary (u
 
 Inertia is the total squared distance from each customer to the centre of their cluster. Adding more clusters always places centres closer to the customers, so inertia keeps falling as K grows, and K=8 will always score lower than K=2 (at the extreme, one cluster per customer gives an inertia of 0). Because of this, inertia alone would always favour a larger K, so K must also be judged with the elbow in the curve, the silhouette score, and whether the segments are useful to the business.
 
+### Task 3: Segment profile, names and PCA
+K = 4 segments. Cluster numbers are only labels and carry no order. Profile (mean values per segment):
+
+| Segment | Name | Customers | Mean recency (days) | Mean frequency | Mean monetary (INR) |
+|---|---|---|---|---|---|
+| 0 | Occasional shoppers | 436 | 28.86 | 3.77 | 1,057.62 |
+| 1 | Premium big spenders | 138 | 24.12 | 6.77 | 7,129.70 |
+| 2 | Loyal frequent buyers | 419 | 8.77 | 19.40 | 3,410.02 |
+| 3 | Drifting customers | 182 | 109.04 | 2.20 | 685.99 |
+
+Recommended action per segment:
+- **Occasional shoppers:** offer bundle deals to raise their basket size.
+- **Premium big spenders:** offer early access to new electronics and a loyalty reward.
+- **Loyal frequent buyers:** offer a free-delivery pass to protect their ordering habit.
+- **Drifting customers:** send a win-back reminder with a time-limited discount.
+
+The Premium segment is the one with the highest mean monetary value (segment 1), and `is_premium` is true only for its 138 customers.
+
+PCA with 2 components on the scaled RFM matrix gives explained_variance_ratio_ of 0.634 and 0.218, a total of 0.852. So two dimensions keep about 85% of the variance, and a 2D picture of the segments is a fair summary of the three RFM columns.
+
+The segment table is saved in `outputs/customer_segments.csv` (1,175 rows, 7 columns: customer_id, recency, frequency, monetary, segment_id, segment_name, is_premium).
+
 ## Part C
 (coming later)
 
