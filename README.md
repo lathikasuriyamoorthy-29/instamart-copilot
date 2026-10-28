@@ -73,11 +73,10 @@ This data covers 11,110 completed Instamart orders across six cities and five pr
 
 Order amounts are strongly right-skewed. The mean is 269.91 but the median is only 135.00, and the skewness is 4.61, so a small number of very large orders pull the average up. Most orders are small: Q1 is 64.80 and Q3 is 297.00.
 
-By the 1.5×IQR rule, the upper fence is 645.30 and 897 orders lie above it. The lower fence is negative (−283.50), so there are no low outliers. Since impossible values were fixed during cleaning, these look like genuine large orders rather than errors.
+By the 1.5×IQR rule, the upper fence is 645.30 and 897 orders lie above it. The lower fence is negative (−283.50), so there are no low outliers. These orders were kept in the data and their cause was not investigated.
 
 The strongest relationship is between order_amount and discount_pct (−0.095), while order_amount and quantity is similar in size (+0.087). Both are very weak, and a correlation this small does not establish cause and effect.
 
-## Part B
 ## Part B
 
 ### Task 1: RFM table
@@ -193,6 +192,34 @@ Confusion matrices on the test set (rows are the true class, columns the predict
 
 This was an experiment on logistic regression. The model selected in Task 6 (the random forest trained on the original data) is unchanged.
 
+### Task 8: Interpretation, saved model and retention list
+**Top 5 features of the selected random forest (feature_importances_):**
+
+| Feature | Importance | Business reading |
+|---|---|---|
+| frequency | 0.307 | how often a customer orders is the strongest signal of staying |
+| monetary | 0.247 | total spend is the second strongest signal |
+| recency | 0.115 | how long since the last order |
+| cancellation_rate | 0.061 | customers with many cancelled orders may be having a poor experience |
+| avg_discount_pct | 0.058 | the average discount may separate deal-driven customers from regular ones |
+
+**Coefficients of three features in the best logistic regression** (numeric features are standardised, so sizes are comparable):
+
+| Feature | Coefficient | Business reading |
+|---|---|---|
+| frequency | -1.698 | the more often a customer orders, the less likely they are to lapse (a strong effect) |
+| recency | +0.040 | a longer gap since the last order slightly raises the chance of lapsing, though the effect is small once frequency is accounted for |
+| tenure_days | -0.050 | customers who signed up longer ago are slightly less likely to lapse |
+
+**Saved model:** the selected random forest (preprocessing and classifier in one pipeline) was saved with `joblib.dump` to `outputs/lapse_model.joblib`, reloaded with `joblib.load`, and its predicted labels and probabilities on the test set are exactly equal to those of the original model.
+
+**Retention list:** 40 test-set customers are in the Premium segment. They were ranked by the model's predicted lapse probability, and the top 10 are saved in `outputs/retention_list.csv` (customer_id, lapse_probability, actually_lapsed). The highest probability is 0.5025, and none of the 10 customers actually lapsed (0 of 10). The Premium flag comes from the whole-window RFM segmentation of Task 3, which includes the September window that defines the lapse label, so it is a post-hoc whole-window label and this list is illustrative, not a leakage-free evaluation. The model's own features use only orders before 2025-09-01.
+
+### Part B: leakage controls
+- No encoder, scaler or resampler saw the test rows. The encoder and scaler are fitted only on training rows inside the pipeline (and re-fitted on the training part of every cross-validation fold), and the over-sampling in Task 7 was applied to the training set only, after the split.
+- No data from 2025-09-01 onwards entered the features: they use orders before the cutoff only, and the code asserts it.
+- The segment labels from Task 3 were not used as features.
+
 ## Part C
 (coming later)
 
@@ -200,4 +227,20 @@ This was an experiment on logistic regression. The model selected in Task 6 (the
 (coming later)
 
 ## Limitations and Next Steps
-(coming later)
+
+**Part A**
+- The data is synthetic and fictional, so the results describe this generated dataset only.
+- Missing values were filled with simple rules, so the filled values are estimates and not recorded values: 67 ages (61 blank and 6 impossible) with the median age of the customer's city, 774 delivery times of completed orders with the median of the product category, and 112 order amounts with the formula price_inr x quantity x (1 - discount_pct / 100). Every filled value in a group is the same number, and no column records which values were filled.
+- Cleaning removed only exact duplicate rows (119) and earlier pending records of the same order_id (656).
+- The 897 orders above the 1.5 x IQR upper fence were kept in the data, and their cause was not investigated.
+- The order amounts are strongly right-skewed (skewness 4.61). The correlations are all close to 0, and correlation measures only straight-line relationships and does not establish cause and effect.
+- `validate.py` checks the clean tables against the fixed reference numbers of this dataset, so it would need new expected values for a different dataset.
+- Dates are stored in SQLite as text (YYYY-MM-DD HH:MM:SS), and the daily revenue query depends on that format.
+- The project ran on Python 3.10.11, while the brief recommends Python 3.11 or newer.
+- Ideas for next steps (not done): add a column that flags every filled value, and compare mean-age filling with median-age filling.
+
+**Part B**
+- The Premium flag used for the retention list is a post-hoc whole-window label (the Task 3 segments use orders from the September window that defines the lapse label), so the retention list is illustrative and not a leakage-free evaluation. The model's own features use only orders before 2025-09-01.
+- The test set is small (232 customers, 89 lapsed), so scores such as F1 can move by a few points with a different split. The two models differed by one customer on the test set.
+- The best logistic regression C was 100, the largest value in the grid, so a wider grid might help.
+- Next steps: build the segments from pre-cutoff orders only, tune the decision threshold for recall, and compare mean-age against median-age filling in the cleaning step.
