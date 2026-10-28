@@ -151,6 +151,29 @@ The nominal columns city, gender and favourite_category are one-hot encoded with
 
 The scaler learned a mean frequency of 8.115 from the 924 training rows, while the full-cohort mean is 8.029. They differ because the scaler is fitted on the training rows only; the test rows are kept out of the fitting on purpose, so no test information leaks into preprocessing. After scaling, the training means are about 0 and the test means are small but not exactly 0, which also shows the scaler did not use test data.
 
+### Task 6: Training, tuning and evaluation
+Baseline from Task 4: always predicting "not lapsed" gives accuracy 0.616 and a lapsed-class F1 of 0.0.
+
+Each model is a `Pipeline` (preprocessing from Task 5, then the classifier), tuned with `GridSearchCV(cv=5, scoring="f1")` on the 924 training rows only. Because the encoder and scaler sit inside the pipeline, they are re-fitted on the training part of every fold, so no validation rows leak into preprocessing. The test set was used only after tuning was finished.
+
+| Model | Grid | Best parameters | Best cross-validated F1 |
+|---|---|---|---|
+| Logistic regression (max_iter=1000) | C in {0.01, 0.1, 1, 10, 100} | C = 100 | 0.651 |
+| Random forest (n_estimators=100, random_state=42) | max_depth in {3, 5, 8}, min_samples_leaf in {5, 10, 20} | max_depth = 8, min_samples_leaf = 10 | 0.682 |
+
+The best C is the largest value in the grid, so a wider grid might improve logistic regression slightly.
+
+**Test set (232 customers, 89 lapsed), lapsed class as positive:**
+
+| Model | True 0 | False 1 | False 0 | True 1 | Precision | Recall | F1 |
+|---|---|---|---|---|---|---|---|
+| Logistic regression | 111 | 32 | 31 | 58 | 0.644 | 0.652 | 0.648 |
+| Random forest | 112 | 31 | 31 | 58 | 0.652 | 0.652 | 0.652 |
+
+(Confusion matrix layout: rows are the true class and columns the predicted class, in the order not lapsed, lapsed. "False 1" is a loyal customer wrongly flagged as lapsing, "False 0" is a lapsing customer that was missed.)
+
+**Selected model: random forest.** It has the higher cross-validated F1 (0.682 against 0.651) and a slightly higher test F1 (0.652 against 0.648), well above the required 0.55. Both models catch the same 58 of the 89 lapsing customers (recall 0.652), but the forest raises one fewer false alarm. Missing a lapsing customer costs all of their future orders, while wrongly targeting a loyal customer only costs a small discount or message, so recall matters more, and the forest does at least as well as logistic regression on both recall and precision. The test difference between the two models is only one customer, so the cross-validated scores on 924 rows are the stronger evidence for the choice.
+
 ## Part C
 (coming later)
 
