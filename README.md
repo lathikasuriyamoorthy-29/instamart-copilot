@@ -146,6 +146,11 @@ No feature column has a missing value (checked in code: 0 missing).
 
 **Baseline:** always predicting "not lapsed" on the test set gives accuracy 0.616 and an F1 of 0.0 for the lapsed class. Accuracy looks acceptable, but this model never finds a single lapsed customer, so the lapsed class is judged with precision, recall and F1 from here on.
 
+### Task 5: Preprocessing without leakage
+The nominal columns city, gender and favourite_category are one-hot encoded with `OneHotEncoder(drop="first")`, so each variable with k categories gives k-1 columns (5 for city, 2 for gender and 4 for favourite_category). The 8 numeric features are standardised with `StandardScaler`. Both are combined in a `ColumnTransformer` that is fitted on the training rows only and then only applied to the test rows, so no encoder or scaler sees test data. The transformed matrices have 19 columns (train (924, 19), test (232, 19)), and the code asserts that no feature column contains a missing value (0 missing).
+
+The scaler learned a mean frequency of 8.115 from the 924 training rows, while the full-cohort mean is 8.029. They differ because the scaler is fitted on the training rows only; the test rows are kept out of the fitting on purpose, so no test information leaks into preprocessing. After scaling, the training means are about 0 and the test means are small but not exactly 0, which also shows the scaler did not use test data.
+
 ## Part C
 (coming later)
 
