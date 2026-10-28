@@ -174,6 +174,25 @@ The best C is the largest value in the grid, so a wider grid might improve logis
 
 **Selected model: random forest.** It has the higher cross-validated F1 (0.682 against 0.651) and a slightly higher test F1 (0.652 against 0.648), well above the required 0.55. Both models catch the same 58 of the 89 lapsing customers (recall 0.652), but the forest raises one fewer false alarm. Missing a lapsing customer costs all of their future orders, while wrongly targeting a loyal customer only costs a small discount or message, so recall matters more, and the forest does at least as well as logistic regression on both recall and precision. The test difference between the two models is only one customer, so the cross-validated scores on 924 rows are the stronger evidence for the choice.
 
+### Task 7: Class-balance experiment
+The lapsed class is the minority (354 of 924 training rows). To test whether this hurts, the lapsed class was over-sampled in the **training set only**, after the split: every original training row was kept, and 216 randomly chosen duplicates of lapsed training rows (drawn with replacement, `random_state=42`) were added, so both classes have 570 rows. The best logistic regression from Task 6 (C = 100) was refitted on this balanced set and compared with the original model on the **original, unchanged test set** (232 customers, 89 lapsed). Over-sampling before the split would have put copies of the same customer into both training and test data, which is leakage.
+
+| Model | Precision | Recall | F1 |
+|---|---|---|---|
+| Original (unbalanced) | 0.644 | 0.652 | 0.648 |
+| Balanced by over-sampling | 0.589 | 0.854 | 0.697 |
+
+Confusion matrices on the test set (rows are the true class, columns the predicted class, in the order not lapsed, lapsed):
+
+| Model | True 0 | False 1 | False 0 | True 1 |
+|---|---|---|---|---|
+| Original | 111 | 32 | 31 | 58 |
+| Balanced | 90 | 53 | 13 | 76 |
+
+**Recall moved most, rising from 0.652 to 0.854**, while precision fell slightly from 0.644 to 0.589 and did not improve. The balanced model sees lapsed customers as just as common as the others, so it is more willing to predict "lapsed". For the retention team this means they would reach many more of the customers who are about to leave (76 of the 89 lapsing test customers instead of 58, and only 13 missed instead of 31), but they would also contact more customers who would have stayed anyway (53 wrongly flagged loyal customers instead of 32, and 129 customers flagged in total instead of 90). That trade is worth making if a retention offer is cheap compared with the value of a lost customer, and costly if offers are expensive. The duplicated rows add no new information, they only change how the model weighs the two classes.
+
+This was an experiment on logistic regression. The model selected in Task 6 (the random forest trained on the original data) is unchanged.
+
 ## Part C
 (coming later)
 

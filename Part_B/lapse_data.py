@@ -72,3 +72,4 @@ if __name__ == "__main__":
     baseline = np.zeros(len(y_test), dtype=int)
     print("baseline accuracy:", round(accuracy_score(y_test, baseline), 3))
     print("baseline lapsed-class F1:", f1_score(y_test, baseline, zero_division=0))
+    print("missing values in features:", df[FEATURES].isna().sum().sum())
