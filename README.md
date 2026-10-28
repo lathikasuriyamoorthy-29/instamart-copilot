@@ -122,6 +122,30 @@ PCA with 2 components on the scaled RFM matrix gives explained_variance_ratio_ o
 
 The segment table is saved in `outputs/customer_segments.csv` (1,175 rows, 7 columns: customer_id, recency, frequency, monetary, segment_id, segment_name, is_premium).
 
+### Task 4: Lapse problem
+**Cohort:** every customer with at least one completed order before the cutoff 2025-09-01 (1,156 customers).
+
+**Label:** `lapsed` is 1 if the customer has no completed order from 2025-09-01 up to and including 2025-09-30, otherwise 0. 443 customers lapsed (38.32%) and 713 did not, so lapsed is the minority class.
+
+**Features (11), built only from orders dated before 2025-09-01:**
+- recency: whole days from the last completed order to the cutoff
+- frequency: number of distinct completed orders
+- monetary: sum of completed order_amount
+- avg_discount_pct: mean discount_pct of completed orders
+- cancellation_rate: cancelled orders divided by all orders with a final status, before the cutoff
+- avg_delivery_minutes: mean delivery time of completed orders
+- favourite_category: most frequent product category of completed orders
+- city, age, gender: from the clean customer table
+- tenure_days: days from signup_date to the cutoff
+
+No feature column has a missing value (checked in code: 0 missing).
+
+**No leakage:** no order dated on or after 2025-09-01 is used to build any feature. The code filters the history to `order_ts < 2025-09-01` and asserts that its latest order is before the cutoff. The segment labels from Task 3 were **not** used as features, because they were built from the whole order history, which includes the September window that defines the label.
+
+**Split:** `train_test_split(test_size=0.2, stratify=y, random_state=42)` gives 924 training rows and 232 test rows, with the same share of lapsed customers in both.
+
+**Baseline:** always predicting "not lapsed" on the test set gives accuracy 0.616 and an F1 of 0.0 for the lapsed class. Accuracy looks acceptable, but this model never finds a single lapsed customer, so the lapsed class is judged with precision, recall and F1 from here on.
+
 ## Part C
 (coming later)
 
