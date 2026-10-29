@@ -5,13 +5,24 @@ This project builds a Customer Intelligence & Support Copilot for synthetic Inst
 
 ## Reproduce
 1. python -m venv .venv
-2. .venv\Scripts\Activate.ps1
+2. .venv\Scripts\Activate.ps1 (on macOS or Linux: source .venv/bin/activate)
 3. pip install -r requirements.txt
 4. python generate_data.py
-5. python Part_A/clean.py
-6. python Part_A/validate.py
-7. python Part_A/run_queries.py
-8. python Part_A/analysis.py
+5. python Part_A/audit.py
+6. python Part_A/clean.py
+7. python Part_A/validate.py
+8. python Part_A/run_queries.py
+9. python Part_A/analysis.py
+10. python Part_B/rfm.py
+11. python Part_B/kmeans_select.py
+12. python Part_B/segments.py
+13. python Part_B/lapse_data.py
+14. python Part_B/preprocess.py
+15. python Part_B/train_models.py
+16. python Part_B/balance_experiment.py
+17. python Part_B/interpret_and_save.py
+18. python Part_C/run_part_c.py
+19. python Part_C/compare_and_route.py
 
 ## Part A
 ### Raw data audit
@@ -221,7 +232,51 @@ This was an experiment on logistic regression. The model selected in Task 6 (the
 - The segment labels from Task 3 were not used as features.
 
 ## Part C
-(coming later)
+
+### Guardrails and privacy (Tasks 1 and 2)
+Tickets are processed in file order. A ticket whose text is empty or only whitespace gets status `skipped_empty` and is never sent to the model (4 tickets). A ticket whose estimated tokens exceed `MAX_INPUT_TOKENS = 400` gets status `flagged_long` and is never sent (4 tickets, each estimated at 734 tokens).
+
+Before a ticket goes into a prompt, personal data is replaced in this order: emails with `[EMAIL]`, phone numbers with `[PHONE]`, order ids with `[ORDER_ID]`, using the patterns `[\w.+-]+@[\w-]+\.[\w.]+`, `\b[6-9]\d{9}\b` and `ORD-\d{6}`. Over all 164 tickets there were 278 substitutions (55 emails, 91 phone numbers, 132 order ids), and re-applying the three patterns to the redacted texts found 0 matches. The user message sent to the model is exactly the redacted ticket text, and the code asserts that no email, phone number or order id appears in any message sent.
+
+### Prompts (Task 3)
+Both prompts contain the word `CLASSIFY`, list the four categories (billing, delivery, technical, fraud) and require a JSON-only reply of the form `{"category": "...", "reason": "..."}`. The zero-shot prompt has no examples (33 estimated tokens). The few-shot prompt adds a block starting with `EXAMPLES:` and two labelled examples, one of them a fraud ticket (82 estimated tokens).
+
+### Retries (Task 4)
+Every model call is wrapped in a retry function with at most 3 retries and exponential backoff with jitter: the wait before retry number n is `0.05 * 2**n * random.uniform(0.9, 1.15)` seconds, and each retry prints one log line with the ticket id, the retry number and the wait. `mock_llm.reset()` is called before each full run. A full zero-shot run over the 156 eligible tickets raised 19 `TransientLLMError`s. All 19 were recovered by the first retry (retry number 0, waits between 0.0459 and 0.0571 seconds, inside the allowed range of 0.045 to 0.0575), and no ticket ended with a permanent failure.
+
+### Validation of answers (Task 5)
+The model reply is parsed as JSON. If the `category` is one of the four allowed values the ticket gets status `classified_json`. If the reply is not valid JSON, the lowercase words are extracted with `re.findall(r"[a-z]+", text.lower())`, and the ticket gets `classified_keyword` only if exactly one allowed category word is present. In every other case, including valid JSON whose category is outside the list, the ticket gets `flagged_invalid_output` and goes to a human, and no category is guessed. For the 156 eligible tickets: 135 `classified_json`, 12 `classified_keyword`, 9 `flagged_invalid_output`.
+
+### Zero-shot against few-shot (Task 6)
+| Prompt | Tickets classified | Correct | Accuracy | Total tokens | Tokens per classified ticket |
+|---|---|---|---|---|---|
+| Zero-shot | 147 | 126 | 85.7% | 9,556 | 65.0 |
+| Few-shot | 147 | 147 | 100% | 17,200 | 117.0 |
+
+Zero-shot confusion table (rows are the true category, columns the predicted one):
+
+| True \ predicted | billing | delivery | fraud | technical |
+|---|---|---|---|---|
+| billing | 38 | 0 | 0 | 0 |
+| delivery | 0 | 36 | 0 | 0 |
+| fraud | 11 | 0 | 23 | 0 |
+| technical | 10 | 0 | 0 | 29 |
+
+The few-shot prompt is 49 estimated tokens longer than the zero-shot prompt, so each of the 156 model calls costs 49 more tokens (7,644 more in total, which is why the total went from 9,556 to 17,200). The extra tokens were worth paying for in this run: they removed all 21 errors, including the 11 of 34 fraud tickets that zero-shot had sent to billing, where they would never reach the security team. This comparison uses the offline mock model and synthetic tickets, so the 100% figure should not be expected to carry over to a real model.
+
+### Token budget and routing (Task 7)
+**Budget demo:** the zero-shot pipeline was run with `TOKEN_BUDGET = 6000` (the budget is checked before every call). The run used 6,017 tokens in total, slightly above 6,000 because the last call that started under the budget pushed it over, and 58 tickets received status `budget_exhausted` and no model call. The result is saved in `outputs/triage_budget_demo.csv`.
+
+**Final run:** the few-shot pipeline was run with `TOKEN_BUDGET = 100000`, and the result was joined with `outputs/customer_segments.csv` from Part B. Routing rules, applied in this order: tickets with status `skipped_empty`, `flagged_long`, `flagged_invalid_output`, `budget_exhausted` or `failed_call` go to `human_review` with priority NORMAL; otherwise a `fraud` ticket goes to `security_team` with priority HIGH; otherwise a ticket from a Premium customer goes to `premium_desk` with priority HIGH; otherwise it goes to `support_queue` with priority NORMAL. A customer with no row in the segment file is treated as not premium. `outputs/triage_results.csv` has 164 rows.
+
+| Route | Priority | Tickets |
+|---|---|---|
+| security_team | HIGH | 34 |
+| premium_desk | HIGH | 11 |
+| support_queue | NORMAL | 102 |
+| human_review | NORMAL | 17 |
+
+**Rule-validated outputs:** 147 tickets (135 `classified_json` and 12 `classified_keyword`) have a category that passed the validation rules, and were routed by category and segment. **Sent to humans:** 17 tickets (9 `flagged_invalid_output`, 4 `skipped_empty` and 4 `flagged_long`). The final run used 17,200 tokens, and the few-shot prompt costs 117.0 tokens per classified ticket (see Task 6).
 
 ## Part D
 (coming later)
@@ -244,3 +299,11 @@ This was an experiment on logistic regression. The model selected in Task 6 (the
 - The test set is small (232 customers, 89 lapsed), so scores such as F1 can move by a few points with a different split. The two models differed by one customer on the test set.
 - The best logistic regression C was 100, the largest value in the grid, so a wider grid might help.
 - Next steps: build the segments from pre-cutoff orders only, tune the decision threshold for recall, and compare mean-age against median-age filling in the cleaning step.
+
+**Part C**
+- All results come from the offline mock model and synthetic tickets, so the 85.7% (zero-shot) and 100% (few-shot) accuracies describe this mock, not a real language model.
+- Token counts are estimates (the number of words x 1.3, rounded up), not billed tokens.
+- The budget is checked before each call, so a run can end slightly over the budget (6,017 tokens against 6,000 in the demo).
+- Redaction covers only emails, 10-digit phone numbers starting with 6 to 9, and order ids of the form ORD- followed by six digits. Any other personal data in a ticket would not be hidden.
+- Rule-validated outputs were checked only for format and for an allowed category. The accuracy against `true_category` was measured for the comparison only and is not part of the routing.
+- A customer with no row in the segment file is treated as not premium, and the Premium flag has the same whole-window caveat as in Part B.
