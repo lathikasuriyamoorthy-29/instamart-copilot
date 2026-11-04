@@ -279,7 +279,7 @@ The few-shot prompt is 49 estimated tokens longer than the zero-shot prompt, so 
 **Rule-validated outputs:** 147 tickets (135 `classified_json` and 12 `classified_keyword`) have a category that passed the validation rules, and were routed by category and segment. **Sent to humans:** 17 tickets (9 `flagged_invalid_output`, 4 `skipped_empty` and 4 `flagged_long`). The final run used 17,200 tokens, and the few-shot prompt costs 117.0 tokens per classified ticket (see Task 6).
 
 ## Part D
-(coming later)
+With overlap 0, seven of the 12 answerable questions have their answer sentence split across a chunk boundary, and two of them fail. For the delivery-time question the sentence "If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount." is cut, and the returned answer begins in the middle of it ("receives a full refund of the order amount.") without the expected fact. For the payment question the sentence "If a payment fails but money is deducted, the amount is returned automatically within 48 hours." is cut, and the answer stops after "returned automatically" and continues into an unrelated fragment. A split sentence does not always cause a failure: the other five split questions were still answered with their expected fact. With overlap 10, four of the 12 answer sentences are still split across a boundary, because they are longer than the overlap, but all 12 answers contained the expected fact. The 10 repeated words put the text around each cut into both neighbouring chunks, which is the likely reason, although this was not tested separately.
 
 ## Limitations and Next Steps
 
