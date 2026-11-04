@@ -279,7 +279,67 @@ The few-shot prompt is 49 estimated tokens longer than the zero-shot prompt, so 
 **Rule-validated outputs:** 147 tickets (135 `classified_json` and 12 `classified_keyword`) have a category that passed the validation rules, and were routed by category and segment. **Sent to humans:** 17 tickets (9 `flagged_invalid_output`, 4 `skipped_empty` and 4 `flagged_long`). The final run used 17,200 tokens, and the few-shot prompt costs 117.0 tokens per classified ticket (see Task 6).
 
 ## Part D
+### Chunking, retrieval and grounded answers (Tasks 1 to 4)
+**Chunks:** each of the five policy files in `data/policies/` is read, split on whitespace and cut into chunks of 40 words. The first chunk covers words 0 to 39, each next chunk starts 30 words later (an overlap of 10 words), and the last chunk is the first one whose end reaches or passes the last word. The source file name is kept with every chunk. There are 15 chunks in total: refund 4, delivery 3, escalation 3, payment 3, privacy 2.
+
+**Retrieval:** a `TfidfVectorizer` is fitted on the chunk texts, the query is transformed with the same vectorizer, and the chunks are ranked by `cosine_similarity`. `retrieve(query, k=3)` returns a list of dictionaries with `source`, `score` and `text`. For the query "refund policy late delivery", the top three chunks all come from `refund_policy.txt` (scores 0.2719, 0.2514 and 0.2454).
+
+TF measures how often a term appears in a chunk, and IDF measures how rare the term is across all chunks, so words found in few chunks get more weight than words found in many. A limitation for this task is that TF-IDF matches exact words only, so two phrasings with the same meaning but different words can score low even though they ask for the same policy.
+
+**Grounded answers:** `answer(question)` retrieves three chunks and sends two messages to `mock_llm.chat`: a system message containing `POLICY ASSISTANT` that tells the model to answer only from the supplied context and to say it could not find the information otherwise, and a user message of the form `CONTEXT:`, the three chunks each preceded by `[source file name]` on its own line, then `QUESTION:` and the question. The function returns the model's text and the list of sources.
+
+**Evaluation on `data/raw/policy_eval.csv` (14 questions: 12 answerable, 2 not covered by any document):**
+
+| Chunking | Chunks | Expected document in top 3 | Expected fact in answer | Fallback for unanswerable questions |
+|---|---|---|---|---|
+| Overlap 10 | 15 | 12/12 | 12/12 | 2/2 |
+| Overlap 0 | 13 | 12/12 | 10/12 | 2/2 |
+
 With overlap 0, seven of the 12 answerable questions have their answer sentence split across a chunk boundary, and two of them fail. For the delivery-time question the sentence "If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount." is cut, and the returned answer begins in the middle of it ("receives a full refund of the order amount.") without the expected fact. For the payment question the sentence "If a payment fails but money is deducted, the amount is returned automatically within 48 hours." is cut, and the answer stops after "returned automatically" and continues into an unrelated fragment. A split sentence does not always cause a failure: the other five split questions were still answered with their expected fact. With overlap 10, four of the 12 answer sentences are still split across a boundary, because they are longer than the overlap, but all 12 answers contained the expected fact. The 10 repeated words put the text around each cut into both neighbouring chunks, which is the likely reason, although this was not tested separately.
+
+### Tools and the refund agent (Tasks 5 to 7)
+**Refund rules implemented:** only `completed` orders can be refunded. A completed order delivered in more than 45 minutes is refunded 100% of its `order_amount`. A completed order delivered in 45 minutes or less gets a refund of 0, which is not issued. A refund above INR 1000 is escalated to a human and not issued automatically.
+
+**Tools** (`Part_D/tools.py`), each with a name, a one-sentence description and a JSON-schema parameter specification in `TOOLS_SPEC`, and a dictionary `TOOL_MAP` from tool name to function:
+- `get_order(order_id)` reads `data/instamart.db` and returns `order_id`, `status`, `order_amount` and `delivery_minutes`, or `{"error": "order not found"}`.
+- `search_policy(query)` returns the output of `retrieve` under the key `results`.
+- `calculate_refund(order_amount, delivery_minutes)` returns `{"refund_inr": <amount>}` following the refund rules.
+- `issue_refund(order_id, refund_inr)` and `escalate_to_human(order_id, refund_inr)` each append one JSON line (timestamp, tool name, order id and amount) to `outputs/refund_ledger.jsonl` and return `{"refund_inr": <amount>}`.
+
+**ReAct loop** (`Part_D/agent.py`, `run_agent`): messages start with a system message containing the word `AGENT` and the user message. In each iteration `mock_llm.chat(messages, tools=TOOLS_SPEC)` is called. If the reply has no tool calls, its content is the final answer. Otherwise an assistant message with the tool call is appended, the function is looked up in `TOOL_MAP` and called with the arguments dictionary, and a tool message whose content is the JSON string of the result is appended before the loop continues. The run returns `status`, `final_answer`, `steps` (every tool name, arguments and observation), `llm_calls` and `tokens_used`. The status is the word before the colon in the final answer. Every run is appended as one JSON line to `outputs/agent_runs.jsonl` (7 lines, one per scenario run; the two limit demos below are not logged there).
+
+**Results for the seven scenarios in `data/raw/agent_scenarios.csv`:**
+
+| Scenario | Status | Refund (INR) | Expected refund (INR) | Model calls | Tokens used |
+|---|---|---|---|---|---|
+| S1 | REFUND | 128.25 | 128.25 | 5 | 1,132 |
+| S2 | REFUND | 135.00 | 135.00 | 5 | 1,132 |
+| S3 | ESCALATE | 1,999.00 | 1,999.00 | 5 | 1,119 |
+| S4 | DENIED | 0.00 | 0.00 | 4 | 793 |
+| S5 | DENIED | 0.00 | 0.00 | 3 | 478 |
+| S6 | NOT_FOUND | 0.00 | 0.00 | 2 | 166 |
+| S7 | FALLBACK_MAX_ITERATIONS | 0.00 | 0.00 | 6 | 3,282 |
+
+Every refund amount equals the expected amount within 0.01, and S1 needs 5 model calls. With the default `token_limit = 6000`, S7 finished all six model calls (3,282 estimated tokens). `outputs/refund_ledger.jsonl` has 3 lines: the S1 and S2 refunds and the S3 escalation.
+
+**Safe stopping:** `run_agent` has three limits, each ending in a fallback status with the steps completed so far and a short human-handoff summary in `final_answer`.
+- After `max_iterations = 6` model calls without a final answer the status is `FALLBACK_MAX_ITERATIONS` (scenario S7, a looping request).
+- After each model call the tokens used are added up, and if the total exceeds `token_limit` the run stops immediately without executing the tool just requested, with status `FALLBACK_TOKEN_LIMIT`.
+- At the top of each iteration, if `time_limit_seconds` or more of wall-clock time (`time.monotonic()`) has elapsed, the status is `FALLBACK_TIMEOUT`.
+
+| Demo run | Status | Model calls | Steps completed |
+|---|---|---|---|
+| S1 with `token_limit = 200` | FALLBACK_TOKEN_LIMIT | 3 (495 tokens used) | 2 (`get_order`, `search_policy`) |
+| S1 with `time_limit_seconds = 0` | FALLBACK_TIMEOUT | 0 | 0 |
+
+### Resumable runs (Task 8)
+After every tool observation is appended, the agent writes a checkpoint file `state/<run id>.json`. It contains the run id, the scenario id, the full message list, `tokens_used`, the step number, the list of tools already executed, the number of model calls and the steps completed so far. `resume_agent(run_id)` loads that checkpoint and continues the same loop with the saved messages, counters and tool list, so tools that already ran are not executed again.
+
+**Demonstration (`Part_D/crash_resume_demo.py`):** scenario S1 was run with run id `S1_crash_demo` and a simulated crash raised right after the second tool execution (after its checkpoint was saved). The checkpoint held step 2, 6 messages and 196 tokens used, and the tools executed so far were `get_order` and `search_policy`. After `resume_agent("S1_crash_demo")` the run finished with status REFUND and a refund of INR 128.25.
+
+Tools executed across both parts, in order: `get_order`, `search_policy`, `calculate_refund`, `issue_refund`. That is four executions and none repeated.
+
+The demonstration writes its refund to a separate file, `outputs/crash_demo_ledger.jsonl`, so the refund of S1 is not recorded twice in `outputs/refund_ledger.jsonl`. `run_agents.py` clears the `state/` folder when it starts, so run it before `crash_resume_demo.py`.
 
 ## Limitations and Next Steps
 
