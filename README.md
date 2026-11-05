@@ -4,25 +4,31 @@
 This project builds a Customer Intelligence & Support Copilot for synthetic Instamart data, in four connected parts. Part A cleans messy order, customer and product exports and stores them in a SQLite database. Part B segments customers with K-means and predicts which customers will lapse. Part C triages support tickets with an offline mock language model, with privacy guardrails, retries and a token budget. Part D answers policy questions with retrieval and runs a refund agent that uses tools. All data is synthetic, all amounts are in INR, and no paid service or API key is needed.
 
 ## Reproduce
-1. python -m venv .venv
-2. .venv\Scripts\Activate.ps1 (on macOS or Linux: source .venv/bin/activate)
-3. pip install -r requirements.txt
-4. python generate_data.py
-5. python Part_A/audit.py
-6. python Part_A/clean.py
-7. python Part_A/validate.py
-8. python Part_A/run_queries.py
-9. python Part_A/analysis.py
-10. python Part_B/rfm.py
-11. python Part_B/kmeans_select.py
-12. python Part_B/segments.py
-13. python Part_B/lapse_data.py
-14. python Part_B/preprocess.py
-15. python Part_B/train_models.py
-16. python Part_B/balance_experiment.py
-17. python Part_B/interpret_and_save.py
-18. python Part_C/run_part_c.py
-19. python Part_C/compare_and_route.py
+Run every command from the repository root, in this order. Later scripts read files written by earlier ones.
+
+1. `python -m venv .venv`
+2. `.venv\Scripts\Activate.ps1` (on macOS or Linux: `source .venv/bin/activate`)
+3. `pip install -r requirements.txt`
+4. `python generate_data.py`
+5. `python Part_A/audit.py`
+6. `python Part_A/clean.py`
+7. `python Part_A/validate.py`
+8. `python Part_A/run_queries.py`
+9. `python Part_A/analysis.py`
+10. `python Part_B/rfm.py`
+11. `python Part_B/kmeans_select.py`
+12. `python Part_B/segments.py`
+13. `python Part_B/lapse_data.py`
+14. `python Part_B/preprocess.py`
+15. `python Part_B/train_models.py`
+16. `python Part_B/balance_experiment.py`
+17. `python Part_B/interpret_and_save.py`
+18. `python Part_C/run_part_c.py`
+19. `python Part_C/compare_and_route.py`
+20. `python Part_D/run_rag.py`
+21. `python Part_D/check_boundary.py`
+22. `python Part_D/run_agents.py`
+23. `python Part_D/crash_resume_demo.py`
 
 ## Part A
 ### Raw data audit
@@ -341,6 +347,15 @@ Tools executed across both parts, in order: `get_order`, `search_policy`, `calcu
 
 The demonstration writes its refund to a separate file, `outputs/crash_demo_ledger.jsonl`, so the refund of S1 is not recorded twice in `outputs/refund_ledger.jsonl`. `run_agents.py` clears the `state/` folder when it starts, so run it before `crash_resume_demo.py`.
 
+### ReAct versus plan-and-execute (Task 9)
+My ReAct agent chooses one step at a time, resending the message history on every call. In my runs it needed 5 model calls and 1,132 tokens for a full refund (S1), 3 calls and 478 tokens for a cancelled order (S5), and 2 calls and 166 tokens for an unknown order (S6).
+
+I did not build plan-and-execute, so its figures are estimates from counting steps, not measurements. It would ask the model once for the whole step list, run the tools without further model calls, and replan only on error. On the normal path that is about 2 calls (one to plan, one for the final answer) instead of 5. Tokens should drop because the history is not resent four times, but the final call still holds the tool results, so I cannot say by how much.
+
+The plan is written before the order is looked up, so it cannot know the order is cancelled (S5) or missing (S6). The executor would have to detect the failed step and replan, adding calls and removing most of the saving on these paths. ReAct reads each observation first, so a missing or cancelled order ends the run without calculating a refund.
+
+I would choose ReAct. The next step depends on what each tool returns, the tools move money, and the workflow is short, so the extra calls cost little (about 1,100 tokens for a full refund). Checking each observation before acting matters more than saving calls.
+
 ## Limitations and Next Steps
 
 **Part A**
@@ -367,3 +382,19 @@ The demonstration writes its refund to a separate file, `outputs/crash_demo_ledg
 - Redaction covers only emails, 10-digit phone numbers starting with 6 to 9, and order ids of the form ORD- followed by six digits. Any other personal data in a ticket would not be hidden.
 - Rule-validated outputs were checked only for format and for an allowed category. The accuracy against `true_category` was measured for the comparison only and is not part of the routing.
 - A customer with no row in the segment file is treated as not premium, and the Premium flag has the same whole-window caveat as in Part B.
+
+**Part D**
+- The model is the offline `mock_llm.py`. Its agent behaviour is a fixed chain of rules, so the seven scenario results show how the loop, tools and limits work and say nothing about the reasoning of a real model.
+- Token counts are estimates (the number of words x 1.3, rounded up), not billed tokens.
+- The token limit is checked after each model call, so a run can end above the limit by the tokens of that last call (the S1 demo with `token_limit = 200` stopped at 495 tokens).
+- TF-IDF matches exact words only, so two phrasings with the same meaning but different words can score low.
+- The retrieval evaluation has only 14 questions. With overlap 10, four of the 12 answer sentences are still cut across a chunk boundary, although all 12 answers contained the expected fact.
+- A tool runs before its checkpoint is saved, so a real crash between the two would repeat that tool, and a repeated `issue_refund` would write a second ledger line. The demonstration raises a simulated crash right after a saved checkpoint, so it does not test this case.
+- The comparison with plan-and-execute uses estimates for a design that was not built.
+- Ideas for next steps (not done): save the checkpoint before running a tool, and check in the ledger whether a refund for the order already exists before issuing it.
+
+**Whole project**
+- All data is synthetic and all models are offline mocks, so no result describes real Instamart customers, policies or a real language model.
+- The scripts use relative paths, so they must be run from the project root, in the order listed under Reproduce, because later scripts read files written by earlier ones.
+- Checks are `assert` statements and fixed reference numbers; the project has no separate unit-test suite.
+- The numbers in this README were produced on Python 3.10.11 (Windows) with the library versions in `requirements.txt`, while the brief recommends Python 3.11 or newer.
